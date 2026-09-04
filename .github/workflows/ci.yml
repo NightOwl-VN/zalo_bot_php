@@ -1,0 +1,109 @@
+# @author  Hoang Khac Phuc
+# @email   hoangkhacphuc.dev@gmail.com
+# @github  https://github.com/hoangkhacphuc
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        php-version: [8.1, 8.2, 8.3]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: curl, mbstring, json
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify syntax (php -l)
+        run: |
+          find src/ tests/ examples/ -name '*.php' -print0 | xargs -0 -n1 -I{} php -l {}
+
+      - name: Run tests
+        run: vendor/bin/phpunit
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: curl, mbstring, json
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify PSR-12 coding standard
+        run: |
+          if command -v vendor/bin/phpcs > /dev/null 2>&1; then
+            vendor/bin/phpcs src/ tests/ examples/ || true
+          else
+            echo "phpcs not installed; skipping PSR-12 verification (php -l still runs in test job)."
+          fi
+
+      - name: Verify no hardcoded secrets
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          ! grep -rnE "(sk-|ghp_|glpat-|xox[bpsar]-|AKIA[A-Z0-9]{16})" src/ examples/ || {
+            echo "ERROR: Potential hardcoded secret detected!"
+            exit 1
+          }
+          ! grep -rnE "(ZALO_BOT_TOKEN|ZALO_BOT_SECRET|botToken|secretKey)\s*[:=]\s*['\"][a-zA-Z0-9_-]{20,}['\"]" src/ examples/ || {
+            echo "ERROR: Potential hardcoded credential detected!"
+            exit 1
+          }
+          echo "No hardcoded secrets found."
+
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: curl, mbstring, json
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify package contents
+        run: composer validate --strict

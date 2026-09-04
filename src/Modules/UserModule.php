@@ -6,6 +6,7 @@ namespace ZaloBot\Sdk\Modules;
 
 use ZaloBot\Sdk\ZaloClient;
 use ZaloBot\Sdk\Exceptions\ValidationException;
+use ZaloBot\Sdk\Exceptions\ApiException;
 
 /**
  * User module - Get user information and follower management.

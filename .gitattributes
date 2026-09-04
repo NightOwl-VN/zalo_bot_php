@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.php text diff=php
+*.md text diff=markdown
+*.json text
+*.yml text
+*.yaml text
+*.xml text
+*.lock -diff
+*.neon -diff
+vendor/ -diff
+.gitattributes -diff
+.gitignore -diff

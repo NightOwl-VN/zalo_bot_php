@@ -13,19 +13,13 @@ use ZaloBot\Sdk\Exceptions\AuthException;
 use ZaloBot\Sdk\Exceptions\NetworkException;
 use ZaloBot\Sdk\Exceptions\TimeoutException;
 use ZaloBot\Sdk\Exceptions\ValidationException;
+use ZaloBot\Sdk\Exceptions\ZaloBotException;
+use RuntimeException;
 
 class ZaloClient
 {
     public const API_BASE_URL = 'https://bot-api.zaloplatforms.com';
 
-    /**
-     * @param array{
-     *   botToken: string,
-     *   int $timeout,
-     *   int $maxRetries,
-     *   string $baseURL
-     * } $config
-     */
     public function __construct(
         protected string $botToken,
         protected int $timeout = 30000,
@@ -39,6 +33,17 @@ class ZaloClient
         return $this->botToken;
     }
 
+    /**
+     * Update bot token at runtime.
+     */
+    public function updateBotToken(string $newToken): void
+    {
+        if (trim($newToken) === '') {
+            throw new ValidationException('botToken must be a non-empty string', 'botToken');
+        }
+        $this->botToken = trim($newToken);
+    }
+
     public function getRequestBaseUrl(): string
     {
         return "{$this->baseURL}/bot{$this->botToken}";
@@ -49,10 +54,9 @@ class ZaloClient
      */
     private function request(string $method, string $apiMethod, array $data = [], array $options = []): mixed
     {
-        $url = "{$this->getRequestBaseUrl()}/{$apiMethod}";
         $client = new Client([
-            'base_uri' => $this->getRequestBaseUrl(),
-            'timeout' => $this->timeout,
+            'base_uri' => $this->getRequestBaseUrl() . '/',
+            'timeout' => $this->timeout / 1000,
             'headers' => [
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json',
@@ -61,15 +65,16 @@ class ZaloClient
 
         for ($attempt = 0; $attempt <= $this->maxRetries; $attempt++) {
             try {
+                $payloadKey = strtoupper($method) === 'GET' ? 'query' : 'json';
                 $response = $client->request($method, $apiMethod, [
-                    'json' => array_merge($data, $options),
-                    'timeout' => $this->timeout,
+                    $payloadKey => array_merge($data, $options),
+                    'timeout' => $this->timeout / 1000,
                 ]);
 
-                $body = json_decode($response->getBody(), true);
+                $body = json_decode((string) $response->getBody(), true);
 
                 // API returns 200 with ok:false => throw ApiError
-                if ($body !== null && $body['ok'] === false) {
+                if ($body !== null && isset($body['ok']) && $body['ok'] === false) {
                     $errorCode = $body['error_code'] ?? -1;
                     $description = $body['description'] ?? 'Unknown error';
                     throw new ApiException(
@@ -80,20 +85,22 @@ class ZaloClient
                     );
                 }
 
-                return $body ?? $response->getBody();
+                return $body ?? (string) $response->getBody();
 
+            } catch (ZaloBotException $e) {
+                // Do not convert our own custom domain exceptions into network timeouts
+                throw $e;
             } catch (ClientException $e) {
                 // Only retry on 429 rate limit
                 if ($attempt < $this->maxRetries && $e->getResponse() && $e->getResponse()->getStatusCode() === 429) {
-                    // Calculate delay with exponential backoff + jitter
                     $delay = min(1000 * pow(2, $attempt) + rand(0, 1000), 30000);
-                    sleep($delay / 1000);
+                    usleep((int) ($delay * 1000));
                     continue;
                 }
 
                 // Translate error
                 $status = $e->getResponse() ? $e->getResponse()->getStatusCode() : 0;
-                $body = json_decode($e->getResponse()->getBody(), true) ?? [];
+                $body = $e->getResponse() ? json_decode((string) $e->getResponse()->getBody(), true) ?? [] : [];
 
                 if ($status === 401 || $status === 403) {
                     throw new AuthException(
@@ -103,18 +110,31 @@ class ZaloClient
                     );
                 }
 
-                throw new NetworkException(
-                    $e->getMessage(),
+                if ($status === 429) {
+                    throw new RateLimitException(
+                        $body['description'] ?? 'Rate limit exceeded',
+                        $status,
+                        null,
+                        $body,
+                    );
+                }
+
+                throw new ApiException(
+                    $body['description'] ?? $e->getMessage(),
+                    $body['error_code'] ?? -1,
+                    $status,
                     $body,
                 );
             } catch (\Throwable $e) {
                 if ($attempt < $this->maxRetries) {
                     $delay = min(1000 * pow(2, $attempt) + rand(0, 1000), 30000);
-                    sleep($delay / 1000);
+                    usleep((int) ($delay * 1000));
                     continue;
                 }
                 throw new TimeoutException(
-                    'Request timed out after ' . $this->timeout . 'ms',
+                    'Request timed out or failed: ' . $e->getMessage(),
+                    null,
+                    $e
                 );
             }
         }
@@ -137,21 +157,27 @@ class ZaloClient
     /** @throws ApiException|RateLimitException|AuthException|TimeoutException|NetworkException */
     public function upload(string $method, array $formData): mixed
     {
-        $client = new \GuzzleHttp\Client([
-            'base_uri' => $this->getRequestBaseUrl(),
-            'timeout' => $this->timeout,
-            'headers' => [
-                'Content-Type' => 'multipart/form-data',
-            ],
+        $client = new Client([
+            'base_uri' => $this->getRequestBaseUrl() . '/',
+            'timeout' => $this->timeout / 1000,
         ]);
+
+        $multipart = [];
+        foreach ($formData as $name => $contents) {
+            $multipart[] = [
+                'name' => $name,
+                'contents' => $contents instanceof \CURLFile ? fopen($contents->getFilename(), 'r') : $contents,
+                'filename' => $contents instanceof \CURLFile ? $contents->getPostFilename() : null,
+            ];
+        }
 
         $response = $client->post($method, [
-            'form_params' => $formData,
-            'timeout' => $this->timeout,
+            'multipart' => $multipart,
+            'timeout' => $this->timeout / 1000,
         ]);
 
-        $body = json_decode($response->getBody(), true);
-        if ($body !== null && $body['ok'] === false) {
+        $body = json_decode((string) $response->getBody(), true);
+        if ($body !== null && isset($body['ok']) && $body['ok'] === false) {
             $errorCode = $body['error_code'] ?? -1;
             $description = $body['description'] ?? 'Unknown error';
             throw new ApiException($description, $errorCode, $response->getStatusCode(), $body);
