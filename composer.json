@@ -1,0 +1,35 @@
+{
+    "name": "hoangkhacphuc/zalobot-sdk",
+    "description": "PHP SDK for Zalo Bot Platform API - messaging, user, media, and webhook endpoints",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["zalo", "bot", "sdk", "zalobot", "webhook", "php"],
+    "authors": [
+        {
+            "name": "Hoang Khac Phuc",
+            "email": "hoangkhacphuc.dev@gmail.com",
+            "homepage": "https://github.com/hoangkhacphuc"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "guzzlehttp/guzzle": "^7.0",
+        "psr/http-message": "^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ZaloBot\\Sdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ZaloBot\\Sdk\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit tests"
+    }
+}
