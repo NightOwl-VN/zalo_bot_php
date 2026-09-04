@@ -1,9 +1,22 @@
 {
     "name": "hoangkhacphuc/zalobot-sdk",
-    "description": "PHP SDK for Zalo Bot Platform API - messaging, user, media, and webhook endpoints",
+    "description": "A lightweight, modular PHP SDK and Webhook handler for Zalo Bot Platform API (bot.zapps.me). Fully typed with PHPDoc and ready for production.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["zalo", "bot", "sdk", "zalobot", "webhook", "php"],
+    "keywords": [
+        "zalo",
+        "bot",
+        "sdk",
+        "zalobot",
+        "webhook",
+        "php",
+        "messaging",
+        "bot-framework",
+        "zalo-bot-api",
+        "zalo-sdk",
+        "guzzle",
+        "psr-12"
+    ],
     "authors": [
         {
             "name": "Hoang Khac Phuc",
@@ -11,6 +24,12 @@
             "homepage": "https://github.com/hoangkhacphuc"
         }
     ],
+    "homepage": "https://github.com/NightOwl-VN/zalo_bot_php",
+    "support": {
+        "issues": "https://github.com/NightOwl-VN/zalo_bot_php/issues",
+        "source": "https://github.com/NightOwl-VN/zalo_bot_php",
+        "docs": "https://github.com/NightOwl-VN/zalo_bot_php/tree/main/docs"
+    },
     "require": {
         "php": ">=8.1",
         "guzzlehttp/guzzle": "^7.0",
