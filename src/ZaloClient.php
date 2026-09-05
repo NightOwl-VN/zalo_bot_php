@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace ZaloBot\Sdk;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\MultipartStream;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Utils;
 use Psr\Http\Client\ClientExceptionInterface;
@@ -39,6 +40,8 @@ class ZaloClient
         private int $maxRetries = 3,
         private string $baseURL = self::API_BASE_URL,
         ?ClientInterface $httpClient = null,
+        /** Test seam: set to 0 to disable sleep entirely, null for normal backoff. */
+        private ?int $retryDelayMs = null,
     ) {
         $this->httpClient = $httpClient ?? new Client([
             'timeout' => $this->timeout / 1000,
@@ -69,7 +72,7 @@ class ZaloClient
      */
     private function request(string $method, string $apiMethod, array $data = [], array $options = []): mixed
     {
-        $uri = $this->getRequestBaseUrl() . '/' . ltrim($apiMethod, '/');
+        $baseUri = $this->getRequestBaseUrl() . '/' . ltrim($apiMethod, '/');
         $payload = array_merge($data, $options);
 
         for ($attempt = 0; $attempt <= $this->maxRetries; $attempt++) {
@@ -80,13 +83,14 @@ class ZaloClient
                 ];
 
                 if (strtoupper($method) === 'GET') {
+                    $uri = $baseUri;
                     if ($payload !== []) {
                         $uri .= '?' . http_build_query($payload);
                     }
                     $request = new Request('GET', $uri, $headers);
                 } else {
                     $body = json_encode($payload, JSON_THROW_ON_ERROR);
-                    $request = new Request('POST', $uri, $headers, $body);
+                    $request = new Request('POST', $baseUri, $headers, $body);
                 }
 
                 $response = $this->httpClient->sendRequest($request);
@@ -209,10 +213,21 @@ class ZaloClient
 
     private function sleepBeforeRetry(int $attempt, string $retryAfter = ''): void
     {
+        // Test seam: retryDelayMs === 0 disables sleeps entirely so retry
+        // behaviour can be verified without wall-clock delays.
+        if ($this->retryDelayMs === 0) {
+            return;
+        }
+
         $serverDelay = $this->parseRetryAfterHeader($retryAfter);
         $delayMs = $serverDelay !== null
             ? $serverDelay * 1000
             : min(1000 * (2 ** $attempt) + random_int(0, 250), 30000);
+
+        if ($this->retryDelayMs !== null) {
+            $delayMs = min($delayMs, $this->retryDelayMs);
+        }
+
         if ($delayMs > 0) {
             usleep($delayMs * 1000);
         }
@@ -237,24 +252,26 @@ class ZaloClient
     /**
      * Upload a file via multipart/form-data.
      *
+     * Uses Guzzle's MultipartStream to stream file contents without loading
+     * entire files into memory.
+     *
      * @param array<string, \CURLFile|mixed> $formData
      * @throws ApiException|RateLimitException|AuthException|TimeoutException|NetworkException
      */
     public function upload(string $method, array $formData): mixed
     {
-        $boundary = '----ZaloBotBoundary' . bin2hex(random_bytes(8));
         $uri = $this->getRequestBaseUrl() . '/' . ltrim($method, '/');
 
-        $parts = [];
+        $elements = [];
         foreach ($formData as $name => $contents) {
-            $parts[] = $this->buildMultipartPart($name, $contents, $boundary);
+            $elements[] = $this->buildMultipartElement($name, $contents);
         }
 
-        $body = implode('', $parts) . "--{$boundary}--\r\n";
+        $multipart = new MultipartStream($elements);
 
         $request = (new Request('POST', $uri))
-            ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $boundary)
-            ->withBody(Utils::streamFor($body));
+            ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $multipart->getBoundary())
+            ->withBody($multipart);
 
         try {
             $response = $this->httpClient->sendRequest($request);
@@ -265,21 +282,38 @@ class ZaloClient
         return $this->decodeResponse($response);
     }
 
-    private function buildMultipartPart(string $name, mixed $contents, string $boundary): string
+    /**
+     * Build a MultipartStream element from a form field name and CURLFile/string.
+     *
+     * CURLFile values are opened as streams so the file is read lazily, never
+     * buffered in its entirety in PHP userland memory.
+     *
+     * @return array{name: string, contents: mixed, filename?: string, headers?: array<string,string>}
+     * @throws ValidationException
+     */
+    private function buildMultipartElement(string $name, mixed $contents): array
     {
         if ($contents instanceof \CURLFile) {
-            $filename = $contents->getPostFilename();
-            $mime = mime_content_type($contents->getFilename()) ?: 'application/octet-stream';
-            $fileData = file_get_contents($contents->getFilename());
-            return "--{$boundary}\r\n"
-                . "Content-Disposition: form-data; name=\"{$name}\"; filename=\"{$filename}\"\r\n"
-                . "Content-Type: {$mime}\r\n\r\n"
-                . $fileData . "\r\n";
+            $filePath = $contents->getFilename();
+            $fileHandle = fopen($filePath, 'rb');
+            if ($fileHandle === false) {
+                throw new ValidationException("Cannot open file for upload: {$filePath}", 'file');
+            }
+
+            return [
+                'name' => $name,
+                'contents' => $fileHandle,
+                'filename' => $contents->getPostFilename(),
+                'headers' => [
+                    'Content-Type' => mime_content_type($filePath) ?: 'application/octet-stream',
+                ],
+            ];
         }
 
-        return "--{$boundary}\r\n"
-            . "Content-Disposition: form-data; name=\"{$name}\"\r\n\r\n"
-            . (string) $contents . "\r\n";
+        return [
+            'name' => $name,
+            'contents' => (string) $contents,
+        ];
     }
 
     /**
