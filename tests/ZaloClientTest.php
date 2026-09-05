@@ -74,7 +74,7 @@ final class ZaloClientTest extends TestCase
             json_encode(['ok' => false, 'description' => 'Invalid token']),
             401,
         );
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->get('getMe');
@@ -88,7 +88,7 @@ final class ZaloClientTest extends TestCase
     public function testMapsForbiddenToAuthException(): void
     {
         $mock = MockHttpClient::of('{}', 403);
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         $this->expectException(AuthException::class);
         $this->expectExceptionMessage('Invalid or expired bot token');
@@ -103,7 +103,7 @@ final class ZaloClientTest extends TestCase
             429,
             ['Retry-After' => '7'],
         );
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->get('getMe');
@@ -121,7 +121,7 @@ final class ZaloClientTest extends TestCase
             json_encode(['ok' => false, 'error_code' => 2003, 'description' => 'User not found']),
             404,
         );
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->get('u-1');
@@ -135,7 +135,7 @@ final class ZaloClientTest extends TestCase
     public function testMapsServerErrorsToApiException(): void
     {
         $mock = MockHttpClient::of('{}', 500);
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         $this->expectException(ApiException::class);
         $client->get('getMe');
@@ -147,7 +147,7 @@ final class ZaloClientTest extends TestCase
             json_encode(['ok' => false, 'error_code' => 1200, 'description' => 'Chat not found']),
             200,
         );
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->post('sendMessage', ['chat_id' => 'x', 'text' => 'hi']);
@@ -161,7 +161,7 @@ final class ZaloClientTest extends TestCase
     public function testNetworkFailureThrowsNetworkExceptionWithPrevious(): void
     {
         $mock = MockHttpClient::networkFailure('Connection refused');
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->get('getMe');
@@ -180,7 +180,7 @@ final class ZaloClientTest extends TestCase
             MockHttpClient::response('{}', 429),
             MockHttpClient::response(json_encode(['ok' => true, 'result' => ['id' => 'bot-1']])),
         ]);
-        $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 1, retryDelayMs: 0, httpClient: $mock);
 
         $result = $client->get('getMe');
 
@@ -250,7 +250,7 @@ final class ZaloClientTest extends TestCase
                 MockHttpClient::response('{}', $status),
                 MockHttpClient::response(json_encode(['ok' => true, 'result' => []])),
             ]);
-            $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
+            $client = new ZaloClient(self::TOKEN, maxRetries: 1, retryDelayMs: 0, httpClient: $mock);
 
             $client->get('getMe');
 
@@ -264,7 +264,7 @@ final class ZaloClientTest extends TestCase
             MockHttpClient::response('{}', 408),
             MockHttpClient::response(json_encode(['ok' => true, 'result' => []])),
         ]);
-        $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 1, retryDelayMs: 0, httpClient: $mock);
 
         $client->get('getMe');
 
@@ -275,7 +275,7 @@ final class ZaloClientTest extends TestCase
     {
         foreach ([400, 401, 403, 404, 422] as $status) {
             $mock = MockHttpClient::of('{}', $status);
-            $client = new ZaloClient(self::TOKEN, maxRetries: 3, httpClient: $mock);
+            $client = new ZaloClient(self::TOKEN, maxRetries: 3, retryDelayMs: 0, httpClient: $mock);
 
             try {
                 $client->get('getMe');
@@ -289,7 +289,7 @@ final class ZaloClientTest extends TestCase
     public function testExhaustedRetriesOn429ThrowsRateLimitException(): void
     {
         $mock = MockHttpClient::of('{}', 429);
-        $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 1, retryDelayMs: 0, httpClient: $mock);
 
         $this->expectException(RateLimitException::class);
         $client->get('getMe');
@@ -307,7 +307,7 @@ final class ZaloClientTest extends TestCase
     {
         // Second call succeeds after first throws network error
         $mock = MockHttpClient::clientError(502, json_encode(['ok' => true, 'result' => []]));
-        $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 1, retryDelayMs: 0, httpClient: $mock);
 
         try {
             $client->get('getErr');
@@ -344,11 +344,7 @@ final class ZaloClientTest extends TestCase
         $tmpFile = tempnam(sys_get_temp_dir(), 'upload-test');
         file_put_contents($tmpFile, 'image-data');
 
-        $captured = null;
-        $mock = MockHttpClient::handler(static function ($request) use (&$captured) {
-            $captured = $request;
-            return MockHttpClient::response(json_encode(['ok' => true, 'result' => ['url' => 'https://cdn.example.com/x.png']]));
-        });
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => ['url' => 'https://cdn.example.com/x.png']]));
         $client = new ZaloClient(self::TOKEN, httpClient: $mock);
 
         $result = $client->upload('me/media/images', [
@@ -356,11 +352,170 @@ final class ZaloClientTest extends TestCase
         ]);
 
         $this->assertSame('https://cdn.example.com/x.png', $result['result']['url']);
-        $this->assertStringContainsString('multipart/form-data', $captured->getHeaderLine('Content-Type'));
-        $body = (string) $captured->getBody();
+        $contentType = $mock->requests[0]['headers']['Content-Type'][0] ?? '';
+        $this->assertStringContainsString('multipart/form-data', $contentType);
+        $body = $mock->requests[0]['body'];
         $this->assertStringContainsString('name="file"', $body);
         $this->assertStringContainsString('filename="test.png"', $body);
         $this->assertStringContainsString('image-data', $body);
+
+        unlink($tmpFile);
+    }
+
+    public function testUploadClosesFileHandlesOnSuccess(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-handle');
+        file_put_contents($tmpFile, 'payload');
+
+        $handle = fopen($tmpFile, 'rb');
+        $this->assertIsResource($handle);
+        fclose($handle);
+
+        // After a successful upload the SDK must have released its own handle:
+        // writing to the file must still be possible (no lingering locks).
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => []]));
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $client->upload('me/media/images', [
+            'file' => new \CURLFile($tmpFile, 'image/png', 'test.png'),
+        ]);
+
+        $this->assertNotFalse(@file_put_contents($tmpFile, 'payload2'), 'Upload must not leave the file handle open');
+
+        unlink($tmpFile);
+    }
+
+    public function testUploadClosesFileHandlesOnValidationError(): void
+    {
+        // Empty file triggers validation before any request is sent.
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-empty');
+        file_put_contents($tmpFile, '');
+
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => []]));
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        try {
+            $client->upload('me/media/images', [
+                'file' => new \CURLFile($tmpFile, 'image/png', 'test.png'),
+            ]);
+            $this->fail('Expected ValidationException for empty file');
+        } catch (ValidationException $e) {
+            $this->assertSame(0, $mock->getCallCount(), 'No request must be sent for an invalid file');
+        }
+
+        unlink($tmpFile);
+    }
+
+    public function testUploadClosesFileHandlesOnTransportException(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-transport');
+        file_put_contents($tmpFile, 'data');
+
+        $mock = MockHttpClient::networkFailure('Connection refused');
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
+
+        try {
+            $client->upload('me/media/images', [
+                'file' => new \CURLFile($tmpFile, 'image/png', 'test.png'),
+            ]);
+            $this->fail('Expected NetworkException');
+        } catch (NetworkException $e) {
+            $this->assertStringContainsString('Connection refused', $e->getMessage());
+        }
+
+        // The SDK must have released its handle even though transport failed.
+        $this->assertNotFalse(@file_put_contents($tmpFile, 'data2'), 'Upload must not leave the file handle open on failure');
+
+        unlink($tmpFile);
+    }
+
+    /**
+     * @dataProvider multipartFilenameProvider
+     */
+    public function testUploadSanitizesFilename(string $input, string $expectedInBody): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-sanitize');
+        file_put_contents($tmpFile, 'data');
+
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => []]));
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $client->upload('me/media/images', [
+            'file' => new \CURLFile($tmpFile, 'image/png', $input),
+        ]);
+
+        $body = $mock->requests[0]['body'];
+        $this->assertStringContainsString($expectedInBody, $body);
+        $this->assertStringNotContainsString("\r\n\r\n--", $body . 'SENTINEL', 'Sanitized filename must not break the multipart framing');
+
+        unlink($tmpFile);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function multipartFilenameProvider(): array
+    {
+        return [
+            'CR injection removed'    => ["evil\r.png", 'filename="evil.png"'],
+            'LF injection removed'     => ["evil\n.png", 'filename="evil.png"'],
+            'quote escaped out'       => ['we"ird.png', 'filename="weird.png"'],
+            'backslash removed'       => ['we\\ird.png', 'filename="weird.png"'],
+            'whitespace trimmed'      => ['  spaced  .png ', 'filename="spaced  .png"'],
+            'safe unicode preserved'  => ['tên-file-ảnh.png', 'filename="tên-file-ảnh.png"'],
+            'emoji preserved'         => ['photo-🎉.png', 'filename="photo-🎉.png"'],
+        ];
+    }
+
+    public function testUploadRejectsMissingFile(): void
+    {
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => []]));
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('readable, non-empty regular file');
+
+        $client->upload('me/media/images', [
+            'file' => new \CURLFile('/nonexistent/dir/file.png', 'image/png', 'file.png'),
+        ]);
+    }
+
+    public function testUploadRejectsEmptyFile(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-empty2');
+        file_put_contents($tmpFile, '');
+
+        $mock = MockHttpClient::of(json_encode(['ok' => true, 'result' => []]));
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        try {
+            $client->upload('me/media/images', [
+                'file' => new \CURLFile($tmpFile, 'image/png', 'file.png'),
+            ]);
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertSame(0, $mock->getCallCount());
+        }
+
+        unlink($tmpFile);
+    }
+
+    public function testUploadErrorMappingMatchesApiRequest(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'upload-error');
+        file_put_contents($tmpFile, 'data');
+
+        // 401 must map to AuthException exactly like a JSON API request.
+        $mock = MockHttpClient::of(json_encode(['ok' => false, 'description' => 'Invalid token']), 401);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
+
+        try {
+            $client->upload('me/media/images', [
+                'file' => new \CURLFile($tmpFile, 'image/png', 'file.png'),
+            ]);
+            $this->fail('Expected AuthException');
+        } catch (AuthException $e) {
+            $this->assertSame(401, $e->getHttpStatus());
+            $this->assertSame('Invalid token', $e->getMessage());
+        }
 
         unlink($tmpFile);
     }
@@ -403,14 +558,58 @@ final class ZaloClientTest extends TestCase
         $this->assertSame('{}', $client->get('getMe'));
     }
 
-    public function testNetworkExceptionOnGenericThrowable(): void
+    public function testProgrammingErrorsPropagateUnchanged(): void
     {
+        // Only PSR-18 ClientExceptionInterface is translated. A RuntimeException
+        // leaking from a broken client/mock is a programming error and must
+        // surface as-is, never masquerade as a NetworkException.
         $mock = MockHttpClient::handler(static function ($request) {
             throw new \RuntimeException('boom');
         });
-        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
 
-        $this->expectException(NetworkException::class);
+        try {
+            $client->get('getMe');
+            $this->fail('Expected RuntimeException to propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+            $this->assertNotInstanceOf(NetworkException::class, $e);
+        }
+    }
+
+    public function testTypeErrorPropagatesUnchanged(): void
+    {
+        $mock = MockHttpClient::handler(static function ($request) {
+            throw new \TypeError('Argument must be of type int');
+        });
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
+
+        $this->expectException(\TypeError::class);
+
+        $client->get('getMe');
+    }
+
+    public function testLogicExceptionPropagatesUnchanged(): void
+    {
+        $mock = MockHttpClient::handler(static function ($request) {
+            throw new \LogicException('programmer mistake');
+        });
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
+
+        $this->expectException(\LogicException::class);
+
+        $client->get('getMe');
+    }
+
+    public function testInvalidArgumentExceptionPropagatesUnchanged(): void
+    {
+        $mock = MockHttpClient::handler(static function ($request) {
+            throw new \InvalidArgumentException('bad argument');
+        });
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, retryDelayMs: 0, httpClient: $mock);
+
+        $this->expectException(\InvalidArgumentException::class);
+
         $client->get('getMe');
     }
 

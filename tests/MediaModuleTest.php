@@ -360,4 +360,135 @@ final class MediaModuleTest extends TestCase
         $this->assertStringContainsString('/bot' . self::TOKEN . '/me/media/images', $capturedUri);
         unlink($tmpFile);
     }
+
+    // ── downloadMedia hardening ──────────────────────────────
+
+    public function testDownloadMediaRejectsMissingDestinationDirectory(): void
+    {
+        $mock = MockHttpClient::sequence([
+            self::okResponse(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/file.bin'],
+            ])),
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Destination directory does not exist');
+
+        (new MediaModule($client))->downloadMedia('att-1', '/nonexistent/path/file.bin');
+    }
+
+    public function testDownloadMediaRejectsDirectoryAsSavePath(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/dl-dir-test-' . bin2hex(random_bytes(4));
+        @mkdir($tmpDir, 0777, true);
+
+        $mock = MockHttpClient::sequence([
+            self::okResponse(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/file.bin'],
+            ])),
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        try {
+            (new MediaModule($client))->downloadMedia('att-1', $tmpDir);
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('is a directory', $e->getMessage());
+        }
+
+        @rmdir($tmpDir);
+    }
+
+    public function testDownloadMediaCleansUpOnWriteFailure(): void
+    {
+        $destDir = sys_get_temp_dir() . '/dl-fail-' . bin2hex(random_bytes(4));
+        @mkdir($destDir, 0777, true);
+        $savePath = $destDir . '/file.bin';
+
+        $mock = MockHttpClient::sequence([
+            self::okResponse(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/file.bin'],
+            ])),
+            MockHttpClient::response('Internal Server Error', 500),
+        ]);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+
+        try {
+            (new MediaModule($client))->downloadMedia('att-1', $savePath);
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('500', $e->getMessage());
+        }
+
+        $this->assertFileDoesNotExist($savePath);
+        // Temp file should also be cleaned up
+        $tmpFiles = glob($destDir . '/*.tmp');
+        $this->assertEmpty($tmpFiles, 'Temp files should be cleaned up on failure');
+
+        @rmdir($destDir);
+    }
+
+    public function testDownloadMediaRejects3xxRedirectResponse(): void
+    {
+        $destDir = sys_get_temp_dir() . '/dl-redir-' . bin2hex(random_bytes(4));
+        @mkdir($destDir, 0777, true);
+        $savePath = $destDir . '/file.bin';
+
+        $mock = MockHttpClient::sequence([
+            self::okResponse(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/file.bin'],
+            ])),
+            MockHttpClient::response('', 301, [
+                'Location' => 'https://evil.com/steal',
+            ]),
+        ]);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 0, httpClient: $mock);
+
+        try {
+            (new MediaModule($client))->downloadMedia('att-1', $savePath);
+            $this->fail('Expected ValidationException for redirect');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('redirects are not followed', $e->getMessage());
+        }
+
+        $this->assertFileDoesNotExist($savePath);
+        $tmpFiles = glob($destDir . '/*.tmp');
+        $this->assertEmpty($tmpFiles);
+
+        @rmdir($destDir);
+    }
+
+    public function testDownloadMediaUsesTempFileAndAtomicRename(): void
+    {
+        $destDir = sys_get_temp_dir() . '/dl-atomic-' . bin2hex(random_bytes(4));
+        @mkdir($destDir, 0777, true);
+        $savePath = $destDir . '/final.bin';
+
+        $mock = MockHttpClient::sequence([
+            self::okResponse(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/file.bin'],
+            ])),
+            MockHttpClient::response('streamed-data', 200),
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $result = (new MediaModule($client))->downloadMedia('att-1', $savePath);
+
+        $this->assertSame($savePath, $result);
+        $this->assertFileExists($savePath);
+        $this->assertSame('streamed-data', file_get_contents($savePath));
+
+        // No leftover temp files
+        $tmpFiles = glob($destDir . '/*.tmp');
+        $this->assertEmpty($tmpFiles, 'No temp files should remain after successful rename');
+
+        @unlink($savePath);
+        @rmdir($destDir);
+    }
 }
