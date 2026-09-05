@@ -258,6 +258,83 @@ final class MediaModuleTest extends TestCase
         (new MediaModule($client))->downloadMedia('att-123', '/tmp/test.bin');
     }
 
+    // ── downloadMedia partial-file cleanup ─────────────────────
+
+    /**
+     * P0 regression: a non-2xx status during download must not leave a
+     * partial/garbage file behind on disk.
+     */
+    public function testDownloadMediaRemovesPartialFileOnBadHttpStatus(): void
+    {
+        $savePath = tempnam(sys_get_temp_dir(), 'dl-cleanup') . '-bad-status.png';
+        @unlink($savePath);
+
+        $mock = MockHttpClient::sequence([
+            MockHttpClient::response(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/image.png'],
+            ])),
+            MockHttpClient::response('partial-content', 404),
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+        $module = new MediaModule($client);
+
+        try {
+            $module->downloadMedia('att-123', $savePath);
+            $this->fail('Expected exception on 404 download');
+        } catch (\Throwable $e) {
+            $this->assertFileDoesNotExist($savePath, 'Partial file must be removed after failure');
+        }
+    }
+
+    /**
+     * P0 regression: a transport failure mid-download must not leave a
+     * partial file behind on disk.
+     */
+    public function testDownloadMediaRemovesPartialFileOnTransportFailure(): void
+    {
+        $savePath = tempnam(sys_get_temp_dir(), 'dl-cleanup') . '-transport.png';
+        @unlink($savePath);
+
+        $throwConnect = new \GuzzleHttp\Exception\ConnectException(
+            'Connection reset mid-transfer',
+            new \GuzzleHttp\Psr7\Request('GET', 'test'),
+        );
+        $mock = MockHttpClient::sequenceWithFailures([
+            ['response', MockHttpClient::response(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/image.png'],
+            ]))],
+            ['throw', $throwConnect],
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+        $module = new MediaModule($client);
+
+        try {
+            $module->downloadMedia('att-123', $savePath);
+            $this->fail('Expected NetworkException');
+        } catch (\ZaloBot\Sdk\Exceptions\NetworkException $e) {
+            $this->assertFileDoesNotExist($savePath, 'Partial file must be removed after transport failure');
+        }
+    }
+
+    /**
+     * An unwritable target directory must fail fast and leave nothing behind.
+     */
+    public function testDownloadMediaRejectsUnwritablePath(): void
+    {
+        $mock = MockHttpClient::sequence([
+            MockHttpClient::response(json_encode([
+                'ok' => true,
+                'result' => ['url' => 'https://example.com/image.png'],
+            ])),
+        ]);
+        $client = new ZaloClient(self::TOKEN, httpClient: $mock);
+
+        $this->expectException(\ZaloBot\Sdk\Exceptions\ValidationException::class);
+        (new MediaModule($client))->downloadMedia('att-123', '/nonexistent-dir/sub/image.png');
+    }
+
     // ── ZaloClient upload uses injected client ─────────────────
 
     public function testUploadDelegatesToClient(): void
