@@ -6,12 +6,12 @@ This guide will walk you through creating a Zalo bot, setting up the PHP SDK, an
 
 ## Step 1: Create a Zalo Bot
 
-1. Go to the [Zalo Developer Platform](https://bot.zapps.me/)
+1. Go to the [Zalo Bot Platform](https://bot.zapps.me/)
 2. Log in with your Zalo account
-3. Click **"Create Official Account"**
-4. Fill in your bot's name, category, and other required fields
-5. After creation, go to the **"Management"** tab
-6. In the **"Bot Token"** section, copy your **Bot Token** and **Secret Key**
+3. Click **"Create Bot"** (Zalo Bot Platform, not Zalo Official Account)
+4. Fill in your bot's name, description, and other required fields
+5. After creation, go to the bot detail page
+6. Copy your **Bot Token** and **Secret Key**
 
 > ⚠️ **Important:** Save these credentials securely. The Bot Token is used for API authentication, and the Secret Key is required for webhook signature verification.
 
@@ -30,9 +30,8 @@ composer require hoangkhacphuc/zalobot-sdk
 Create a `.env` file in your project root:
 
 ```env
-ZALO_BOT_TOKEN=your_access_token_here
+ZALO_BOT_TOKEN=your_bot_token_here
 ZALO_BOT_SECRET=your_secret_key_here
-ZALO_BOT_APP_ID=your_app_id_here  # optional
 ZALO_BOT_TIMEOUT=30000             # optional
 ZALO_BOT_MAX_RETRIES=3             # optional
 ```
