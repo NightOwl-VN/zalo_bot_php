@@ -1,8 +1,14 @@
 # Zalo Bot PHP SDK
 
-A PHP SDK for [Zalo Bot Platform API](https://bot.zapps.me/docs/).
+[![Latest Stable Version](https://poser.pugx.org/hoangkhacphuc/zalobot-sdk/v)](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
+[![Latest Unstable Version](https://poser.pugx.org/hoangkhacphuc/zalobot-sdk/v/unstable)](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
+[![License](https://poser.pugx.org/hoangkhacphuc/zalobot-sdk/license)](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
+[![Total Downloads](https://poser.pugx.org/hoangkhacphuc/zalobot-sdk/downloads)](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
 
-Migrated from the Node.js [zalobot-sdk](https://github.com/NightOwl-VN/zalobot-sdk).
+A lightweight, modular PHP SDK for the [Zalo Bot Platform API](https://bot.zapps.me/docs/).
+Written in PHP 8.1+ with strict types, PSR-18 HTTP client support, and zero framework coupling.
+
+Port of the Node.js [zalobot-sdk](https://github.com/NightOwl-VN/zalobot-sdk).
 
 ## Installation
 
@@ -13,7 +19,7 @@ composer require hoangkhacphuc/zalobot-sdk
 ## Requirements
 
 - PHP >= 8.1
-- cURL extension
+- A PSR-18 HTTP client (e.g. `guzzlehttp/guzzle` for the default)
 
 ## Quick Start
 
@@ -131,9 +137,14 @@ $result = $bot->media->uploadFile('/path/to/document.pdf');
 | Method | Description |
 |--------|-------------|
 | `verify($headers)` | Verify secret token |
-| `parseEvent($payload)` | Parse & normalize event |
+| `parseEvent($payload)` | Parse & normalize event (returns array) |
+| `parseEventDto($payload)` | Parse & return typed `WebhookEvent` DTO |
 | `handle($callback)` | Execute handler |
 | `EVENT_MAP` | Raw → normalized event names |
+
+The `WebhookEvent` DTO offers named properties (`->event`, `->userId`, `->chatId`, etc.)
+plus convenience helpers (`->isText()`, `->isFollow()`) and is fully array-accessible
+for backward compatibility.
 
 ### `MediaModule` (`$bot->media`)
 

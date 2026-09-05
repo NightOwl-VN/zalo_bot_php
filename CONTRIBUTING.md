@@ -37,7 +37,7 @@ Follow these steps to set up the development environment locally:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/NightOwl-VN/zalobot_php.git
+git clone https://github.com/NightOwl-VN/zalo_bot_php.git
 cd zalobot-php-sdk
 
 # 2. Install dependencies
@@ -141,7 +141,7 @@ We enforce the [Conventional Commits](https://www.conventionalcommits.org/) spec
    ```
 
 4. **Open a Pull Request**:
-   - Open a PR against the `main` branch of `NightOwl-VN/zalobot_php`.
+   - Open a PR against the `main` branch of `NightOwl-VN/zalo_bot_php`.
    - Provide a clear summary of changes and reference related issue numbers (e.g., `Closes #12`).
    - A maintainer will review your PR and provide feedback.
 

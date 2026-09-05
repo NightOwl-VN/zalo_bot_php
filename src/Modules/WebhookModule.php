@@ -1,11 +1,18 @@
 <?php
 
+/**
+ * @author  Hoang Khac Phuc
+ * @email   hoangkhacphuc.dev@gmail.com
+ * @github  https://github.com/hoangkhacphuc
+ */
+
 declare(strict_types=1);
 
 namespace ZaloBot\Sdk\Modules;
 
 use ZaloBot\Sdk\Exceptions\WebhookException;
 use ZaloBot\Sdk\Exceptions\ValidationException;
+use ZaloBot\Sdk\WebhookEvent;
 
 /**
  * Webhook module - Parse and verify Zalo Bot webhook events.
@@ -67,18 +74,12 @@ class WebhookModule
      * Parse webhook event payload.
      *
      * Supports both wrapped {ok, result: {event_name, message}} and flat {event_name, message}.
+     * Returns a WebhookEvent DTO which is also array-accessible with the
+     * legacy keys (event, eventName, userId, chatId, messageId, timestamp, message, raw)
+     * for backward compatibility.
      *
-     * @param array $payload Decoded JSON payload
-     * @return array{
-     *   event: string,
-     *   eventName: string,
-     *   userId: ?string,
-     *   chatId: ?string,
-     *   messageId: ?string,
-     *   timestamp: int,
-     *   message: ?array,
-     *   raw: array
-     * }
+     * @param array<string, mixed> $payload Decoded JSON payload
+     * @return array{event: string, eventName: string, userId: ?string, chatId: ?string, messageId: ?string, timestamp: int, message: ?array, raw: array}
      */
     public function parseEvent(array $payload): array
     {
@@ -106,19 +107,9 @@ class WebhookModule
 
         $normalizedEvent = self::EVENT_MAP[$eventName] ?? $eventName;
 
-        $event = [
-            'event' => $normalizedEvent,
-            'eventName' => $eventName,
-            'userId' => $userId,
-            'chatId' => $chatId,
-            'messageId' => $msg['message_id'] ?? null,
-            'timestamp' => $msg['date'] ?? (int) (microtime(true) * 1000),
-            'message' => null,
-            'raw' => $payload,
-        ];
-
+        $message = null;
         if ($msg !== null) {
-            $event['message'] = match ($normalizedEvent) {
+            $message = match ($normalizedEvent) {
                 'user_text' => ['text' => $msg['text'] ?? null],
                 'user_image' => [
                     'photo' => $msg['photo'] ?? null,
@@ -130,13 +121,34 @@ class WebhookModule
             };
         }
 
-        return $event;
+        return [
+            'event' => $normalizedEvent,
+            'eventName' => $eventName,
+            'userId' => $userId,
+            'chatId' => $chatId,
+            'messageId' => $msg['message_id'] ?? null,
+            'timestamp' => $msg['date'] ?? (int) (microtime(true) * 1000),
+            'message' => $message,
+            'raw' => $payload,
+        ];
     }
 
     /**
-     * PSR-7 / PSR-15 Middleware handler (generic callback).
+     * Parse event and return a typed WebhookEvent DTO.
+     * For backward compatibility, parseEvent() returns a plain array.
+     * Use this method when you want typed access with convenience helpers.
+     */
+    public function parseEventDto(array $payload): WebhookEvent
+    {
+        return new WebhookEvent($this->parseEvent($payload));
+    }
+
+    /**
+     * Process a webhook request: verify, parse, and invoke handler callback.
      *
-     * @param callable(array $event): mixed $handler
+     * @param callable(array $event): mixed $handler Called with parsed event data
+     * @param array|null $headers HTTP headers (null = getallheaders())
+     * @param array|null $body Decoded JSON body (null = php://input)
      */
     public function handle(callable $handler, ?array $headers = null, ?array $body = null): mixed
     {

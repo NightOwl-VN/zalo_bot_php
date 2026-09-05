@@ -15,7 +15,7 @@ Chúng tôi cam kết tạo ra một môi trường mở, hòa đồng và tôn 
 ## 🛠️ Cách thức Đóng góp
 
 ### 1. Báo cáo Lỗi (Reporting Bugs)
-- Tìm kiếm trong danh sách [GitHub Issues](https://github.com/NightOwl-VN/zalobot_php/issues) trước để tránh tạo trùng lặp.
+- Tìm kiếm trong danh sách [GitHub Issues](https://github.com/NightOwl-VN/zalo_bot_php/issues) trước để tránh tạo trùng lặp.
 - Nếu lỗi chưa được báo cáo, tạo một issue mới sử dụng mẫu **Bug Report**.
 - Cung cấp tiêu đề rõ ràng, các bước tái hiện lỗi, kết quả mong đợi và kết quả thực tế, cùng thông tin môi trường (PHP version, OS, SDK version).
 - Đính kèm log lỗi hoặc đoạn mã mẫu tối giản (tuyệt đối không để lộ token hay secret key thật).
@@ -37,7 +37,7 @@ Các bước thiết lập môi trường để phát triển và test:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/NightOwl-VN/zalobot_php.git
+git clone https://github.com/NightOwl-VN/zalo_bot_php.git
 cd zalobot-php-sdk
 
 # 2. Cài đặt dependencies
@@ -140,7 +140,7 @@ Dự án áp dụng quy chuẩn [Conventional Commits](https://www.conventionalc
    ```
 
 4. **Mở Pull Request**:
-   - Tạo PR vào nhánh `main` của repository `NightOwl-VN/zalobot_php`.
+   - Tạo PR vào nhánh `main` của repository `NightOwl-VN/zalo_bot_php`.
    - Mô tả ngắn gọn những gì đã thay đổi và đính kèm link issue liên quan (VD: `Closes #12`).
    - Maintainer sẽ review và phản hồi sớm nhất có thể.
 

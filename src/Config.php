@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * @author  Hoang Khac Phuc
+ * @email   hoangkhacphuc.dev@gmail.com
+ * @github  https://github.com/hoangkhacphuc
+ */
+
 declare(strict_types=1);
 
 namespace ZaloBot\Sdk;
@@ -31,7 +37,7 @@ class Config
      */
     public static function fromEnv(array $overrides = []): self
     {
-        $env = fn(string $key, mixed $default = null): mixed =>
+        $env = fn (string $key, mixed $default = null): mixed =>
             $overrides[$key] ?? $_ENV[$key] ?? getenv($key) ?: $default;
 
         return new self(

@@ -38,4 +38,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and fol
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed (BREAKING-safe refactors)
+- **`ZaloClient` HTTP stack**: `ZaloClient` now accepts any **PSR-18** `ClientInterface`
+  via constructor injection (optional 5th arg, defaults to a Guzzle client for
+  backward compatibility). No client is instantiated per request anymore.
+- **Exception mapping**: `catch (\Throwable)` no longer converts every unknown error
+  into `TimeoutException`. Status codes now map precisely:
+  `401/403 → AuthException`, `429 → RateLimitException` (with `Retry-After` support),
+  other 4xx/5xx → `ApiException`, transport-level errors → `NetworkException`,
+  actual timeouts → `TimeoutException`. Previous exception chain always preserved.
+- **Retry policy**: retries on `408`, `429`, `502`, `503`, `504` (previously only 429),
+  exponential backoff with jitter, honors `Retry-After` header. `400/401/403/404/422`
+  are never retried.
+- **`MediaModule::downloadMedia()`** now uses the injected PSR-18 client instead of raw
+  cURL with `CURLOPT_FOLLOWLOCATION`; every download validates HTTP status and the
+  resolved host before writing to disk. Partial files are cleaned up on failure.
+- **SSRF hardening** (MediaModule): blocked IPv4-mapped IPv6 (`::ffff:127.0.0.1`),
+  decimal IPs (`2130706433`), hex (`0x7f000001`) and octal (`0177.0.0.1`) forms,
+  link-local (fe80::/10), ULA (fc00::/7), `localhost`/`.localhost`, and DNS-resolved
+  hostnames that resolve to private addresses (DNS-rebinding defense).
+- **`UserModule` LRU fix**: cache hits now update recency order (previously a hit
+  left the entry at its old position, so frequently-read users could be evicted).
+- **`WebhookModule::handle()`** documentation corrected: it is a callback-based
+  handler, not a PSR-7/PSR-15 middleware.
+
+### Added
+- `WebhookEvent` DTO with typed readonly properties, convenience predicates
+  (`isText`, `isImage`, `isSticker`, `isVoice`, `isFollow`, `isUnfollow`) and
+  `ArrayAccess` compatibility. `WebhookModule::parseEventDto()` returns it;
+  `parseEvent()` still returns a plain array for backward compatibility.
+- `ZaloClient::download(string $url): ResponseInterface` for media downloads.
+- PHPStan (level 6) and PHP-CS-Fixer (PSR-12) configuration with composer scripts.
+- CI matrix now includes PHP 8.4.
+- Examples: `error-handling.php`, `media-download.php`, `long-polling.php`.
+- Test suite grew from 48 to 121 tests with a PSR-18 `MockHttpClient`
+  (no real API calls in tests).
+
+### Dependencies
+- `psr/http-client` (^1.0) is now a runtime requirement; `guzzlehttp/guzzle`
+  moved to `require-dev` (any PSR-18 client can be injected).
+- Dev: added `phpstan/phpstan` and `friendsofphp/php-cs-fixer`.
