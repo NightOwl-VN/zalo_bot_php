@@ -5,8 +5,8 @@
 *.yml text
 *.yaml text
 *.xml text
+*.neon text
 *.lock -diff
-*.neon -diff
 vendor/ -diff
 .gitattributes -diff
 .gitignore -diff
