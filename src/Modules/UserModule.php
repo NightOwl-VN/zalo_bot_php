@@ -86,6 +86,12 @@ class UserModule
         $cacheKey = "user:{$userId}:{$fields}";
 
         if (empty($options['forceRefresh']) && isset($this->cache[$cacheKey])) {
+            // A cache hit is also an access: move the key to the MRU end.
+            $this->cacheOrder = array_values(array_filter(
+                $this->cacheOrder,
+                static fn (string $key): bool => $key !== $cacheKey,
+            ));
+            $this->cacheOrder[] = $cacheKey;
             return $this->cache[$cacheKey]['data'];
         }
 
