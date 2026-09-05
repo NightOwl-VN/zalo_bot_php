@@ -60,6 +60,25 @@ final class MockHttpClient implements ClientInterface
     }
 
     /**
+     * Create a mock with sequential responses or thrown exceptions.
+     *
+     * @param list<array{0: 'throw'|'response', 1: mixed}> $actions
+     */
+    public static function sequenceWithFailures(array $actions): self
+    {
+        $mock = new self();
+        foreach ($actions as [$type, $value]) {
+            $mock->handlers[] = static function (RequestInterface $request) use ($type, $value): ResponseInterface {
+                if ($type === 'throw') {
+                    throw $value;
+                }
+                return $value;
+            };
+        }
+        return $mock;
+    }
+
+    /**
      * Create a mock from a handler callable.
      *
      * @param callable(RequestInterface): ResponseInterface $handler
@@ -126,6 +145,9 @@ final class MockHttpClient implements ClientInterface
 
     /**
      * Build a mock that throws a Guzzle RequestException (simulates client errors).
+     *
+     * Uses the static create() factory to correctly wire the response object
+     * into the exception, rather than passing it as the $code parameter.
      */
     public static function clientError(
         int $statusCode,
@@ -134,11 +156,8 @@ final class MockHttpClient implements ClientInterface
     ): self {
         $mock = new self();
         $mock->handlers[] = static function (RequestInterface $request) use ($statusCode, $body, $message): never {
-            throw new \GuzzleHttp\Exception\RequestException(
-                $message,
-                $request,
-                static::response($body, $statusCode),
-            );
+            $response = static::response($body, $statusCode);
+            throw \GuzzleHttp\Exception\RequestException::create($request, $response);
         };
         return $mock;
     }

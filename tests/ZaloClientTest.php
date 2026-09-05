@@ -188,6 +188,61 @@ final class ZaloClientTest extends TestCase
         $this->assertSame(2, $mock->getCallCount());
     }
 
+    /**
+     * P0 regression: the retry loop previously mutated $uri in place, so a
+     * retry after a 429/503 re-appended the query string (?a=1?a=1) — and a
+     * GET retry would stack params from previous attempts. Each attempt
+     * must send the identical, uncorrupted URI.
+     */
+    public function testRetryDoesNotDoubleAppendQueryParams(): void
+    {
+        $uris = [];
+        $mock = MockHttpClient::handler(static function ($request) use (&$uris) {
+            $uris[] = (string) $request->getUri();
+            $count = count($uris);
+            return $count < 3
+                ? MockHttpClient::response('{}', 503)
+                : MockHttpClient::response(json_encode(['ok' => true, 'result' => []]));
+        });
+        $client = new ZaloClient(self::TOKEN, maxRetries: 3, httpClient: $mock, retryDelayMs: 0);
+
+        $client->get('getMe', ['offset' => 42, 'limit' => 10]);
+
+        $this->assertCount(3, $uris);
+        $this->assertSame($uris[0], $uris[1], 'Attempt 2 must send the same URI as attempt 1');
+        $this->assertSame($uris[0], $uris[2], 'Attempt 3 must send the same URI as attempt 1');
+        $this->assertStringContainsString('offset=42', $uris[0]);
+        $this->assertStringContainsString('limit=10', $uris[0]);
+        $this->assertSame(1, substr_count($uris[0], '?'), 'Query string must appear exactly once');
+        $this->assertSame(1, substr_count($uris[0], 'offset='));
+        $this->assertSame(1, substr_count($uris[0], 'limit='));
+    }
+
+    /**
+     * Same class of bug for POST: the request body is rebuilt every attempt,
+     * so payload corruption from a mutated shared variable must never happen.
+     */
+    public function testRetrySendsIdenticalJsonBody(): void
+    {
+        $bodies = [];
+        $mock = MockHttpClient::handler(static function ($request) use (&$bodies) {
+            $bodies[] = (string) $request->getBody();
+            return count($bodies) < 2
+                ? MockHttpClient::response('{}', 502)
+                : MockHttpClient::response(json_encode(['ok' => true, 'result' => []]));
+        });
+        $client = new ZaloClient(self::TOKEN, maxRetries: 2, httpClient: $mock, retryDelayMs: 0);
+
+        $client->post('sendMessage', ['chat_id' => 'c-1', 'text' => 'hello']);
+
+        $this->assertCount(2, $bodies);
+        $this->assertSame($bodies[0], $bodies[1], 'Every retry must send an identical body');
+        $this->assertSame(
+            ['chat_id' => 'c-1', 'text' => 'hello'],
+            json_decode($bodies[0], true),
+        );
+    }
+
     public function testRetriesOn502And503And504(): void
     {
         foreach ([502, 503, 504] as $status) {
@@ -242,14 +297,44 @@ final class ZaloClientTest extends TestCase
         $this->assertSame(2, $mock->getCallCount());
     }
 
+    /**
+     * The PSR-18 mock throws RequestException (with a 502 response) on every
+     * attempt. The client retries it (502 is transient) and, once retries are
+     * exhausted, throws NetworkException with the original transport error
+     * preserved as the previous exception.
+     */
     public function testRetriesOnNetworkTransientsThenSucceeds(): void
     {
         // Second call succeeds after first throws network error
         $mock = MockHttpClient::clientError(502, json_encode(['ok' => true, 'result' => []]));
         $client = new ZaloClient(self::TOKEN, maxRetries: 1, httpClient: $mock);
 
-        $this->expectException(NetworkException::class);
-        $client->get('getMe');
+        try {
+            $client->get('getErr');
+            $this->fail('Expected NetworkException after exhausting retries');
+        } catch (NetworkException $e) {
+            $this->assertSame(2, $mock->getCallCount(), '502 transport errors must be retried');
+            $this->assertNotNull($e->getPrevious(), 'Original PSR-18 error must be chained');
+        }
+    }
+
+    /**
+     * A transient network failure (connection refused) followed by a healthy
+     * response must recover: the retry loop treats non-timeout ConnectException
+     * as transient and re-issues the request.
+     */
+    public function testRetriesOnTransientConnectErrorThenSucceeds(): void
+    {
+        $mock = MockHttpClient::sequenceWithFailures([
+            ['throw', new \GuzzleHttp\Exception\ConnectException('Connection refused', new \GuzzleHttp\Psr7\Request('GET', 'test'))],
+            ['response', MockHttpClient::response(json_encode(['ok' => true, 'result' => ['id' => 'bot-9']]))],
+        ]);
+        $client = new ZaloClient(self::TOKEN, maxRetries: 2, httpClient: $mock, retryDelayMs: 0);
+
+        $result = $client->get('getMe');
+
+        $this->assertSame('bot-9', $result['result']['id']);
+        $this->assertSame(2, $mock->getCallCount());
     }
 
     // ── Upload ───────────────────────────────────────────────

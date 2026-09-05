@@ -61,7 +61,7 @@ class MediaModule
                 );
             }
             $stream = $response->getBody();
-            $target = fopen($savePath, 'wb');
+            $target = @fopen($savePath, 'wb');
             if ($target === false) {
                 throw new ValidationException("Cannot write to {$savePath}", 'savePath');
             }
