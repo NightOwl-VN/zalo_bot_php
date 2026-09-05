@@ -16,6 +16,6 @@ Welcome to the official English documentation for the Zalo Bot PHP SDK.
 
 ## 📦 Quick Links
 
-- [GitHub Repository](https://github.com/NightOwl-VN/zalobot_php)
+- [GitHub Repository](https://github.com/NightOwl-VN/zalo_bot_php)
 - [Packagist Package](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
 - [Zalo Bot Platform](https://bot.zapps.me/)

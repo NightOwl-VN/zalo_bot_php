@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * @author  Hoang Khac Phuc
+ * @email   hoangkhacphuc.dev@gmail.com
+ * @github  https://github.com/hoangkhacphuc
+ */
+
 declare(strict_types=1);
 
 namespace ZaloBot\Sdk\Tests;
@@ -119,4 +125,3 @@ final class MessageModuleTest extends TestCase
         $module->deleteWebhook();
     }
 }
-

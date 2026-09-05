@@ -142,8 +142,8 @@ cloudflared tunnel --url http://localhost:8080
 
 ```bash
 # Clone repository
-git clone your-repo
-cd your-repo
+git clone https://github.com/NightOwl-VN/zalo_bot_php.git
+cd zalo_bot_php
 
 # Cài đặt dependencies
 composer install --no-dev --optimize-autoloader

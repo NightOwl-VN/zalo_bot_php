@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * @author  Hoang Khac Phuc
+ * @email   hoangkhacphuc.dev@gmail.com
+ * @github  https://github.com/hoangkhacphuc
+ */
+
 declare(strict_types=1);
 
 namespace ZaloBot\Sdk\Tests;
@@ -131,4 +137,3 @@ final class WebhookModuleTest extends TestCase
         $this->assertSame('user-3', $event['userId']);
     }
 }
-
