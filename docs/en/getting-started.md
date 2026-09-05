@@ -141,8 +141,8 @@ Set the generated URL as your webhook endpoint in the Zalo Developer Platform.
 
 ```bash
 # Clone repository
-git clone https://github.com/NightOwl-VN/zalo_bot_php.git
-cd zalo_bot_php
+git clone https://github.com/NightOwl-VN/zalobot-sdk-php.git
+cd zalobot-sdk-php
 
 # Install dependencies
 composer install --no-dev --optimize-autoloader

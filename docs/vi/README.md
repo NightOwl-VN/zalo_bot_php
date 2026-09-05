@@ -16,6 +16,6 @@ Chào mừng bạn đến với tài liệu chính thức bằng Tiếng Việt 
 
 ## 📦 Liên kết nhanh
 
-- [GitHub Repository](https://github.com/NightOwl-VN/zalo_bot_php)
+- [GitHub Repository](https://github.com/NightOwl-VN/zalobot-sdk-php)
 - [Packagist Package](https://packagist.org/packages/hoangkhacphuc/zalobot-sdk)
 - [Zalo Bot Platform](https://bot.zapps.me/)
