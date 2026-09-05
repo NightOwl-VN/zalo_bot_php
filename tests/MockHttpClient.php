@@ -60,9 +60,9 @@ final class MockHttpClient implements ClientInterface
     }
 
     /**
-     * Create a mock with sequential responses or thrown exceptions.
+     * Create a mock from a sequence of responses or thrown transport errors.
      *
-     * @param list<array{0: 'throw'|'response', 1: mixed}> $actions
+     * @param list<array{0: string, 1: mixed}> $actions
      */
     public static function sequenceWithFailures(array $actions): self
     {
@@ -92,9 +92,13 @@ final class MockHttpClient implements ClientInterface
 
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
+        // Snapshot the body eagerly: multipart file handles may be closed by the
+        // SDK right after sendRequest() returns, so late reads are impossible.
         $this->requests[] = [
             'uri' => (string) $request->getUri(),
             'method' => $request->getMethod(),
+            'headers' => $request->getHeaders(),
+            'body' => (string) $request->getBody(),
         ];
 
         if (empty($this->handlers)) {
@@ -147,7 +151,7 @@ final class MockHttpClient implements ClientInterface
      * Build a mock that throws a Guzzle RequestException (simulates client errors).
      *
      * Uses the static create() factory to correctly wire the response object
-     * into the exception, rather than passing it as the $code parameter.
+     * into the exception — Guzzle 8 removed $response from __construct().
      */
     public static function clientError(
         int $statusCode,
@@ -157,7 +161,25 @@ final class MockHttpClient implements ClientInterface
         $mock = new self();
         $mock->handlers[] = static function (RequestInterface $request) use ($statusCode, $body, $message): never {
             $response = static::response($body, $statusCode);
-            throw \GuzzleHttp\Exception\RequestException::create($request, $response);
+            throw \GuzzleHttp\Exception\RequestException::create($request, $response, new \RuntimeException($message));
+        };
+        return $mock;
+    }
+
+    /**
+     * Build a mock that throws a Guzzle ConnectException with cURL timeout context
+     * (errno 28), matching how the cURL handler reports request timeouts.
+     */
+    public static function timeoutFailure(string $message = 'Operation timed out'): self
+    {
+        $mock = new self();
+        $mock->handlers[] = static function (RequestInterface $request) use ($message): never {
+            throw new \GuzzleHttp\Exception\ConnectException(
+                $message,
+                $request,
+                null,
+                ['errno' => 28, 'timed_out' => true],
+            );
         };
         return $mock;
     }

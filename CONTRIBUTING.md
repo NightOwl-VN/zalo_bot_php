@@ -62,6 +62,17 @@ vendor/bin/phpunit
 vendor/bin/phpunit tests/ConfigTest.php
 ```
 
+
+### Composer Lockfile Policy
+
+This is a **library** repository. In general, Composer lockfiles are **not
+committed** for library repositories: consumers run `composer install` using
+the `composer.json` constraints, and the lockfile is generated in their
+project. The `composer.lock` currently committed here is retained only to
+keep CI reproducible during active development; it will be removed (or
+become optional) before a stable release. If you are a consumer, run
+`composer update` to get the latest compatible versions, not `install`.
+
 ### Running Examples
 ```bash
 # Set up your .env in the examples directory first

@@ -41,47 +41,81 @@ class MediaModule
         return $url;
     }
 
-    /** Download media using the injected PSR-18 client, never raw cURL. */
+    /**
+     * Download media to a local file using the injected PSR-18 client.
+     *
+     * **Redirect policy:** redirects are never followed automatically. A 3xx
+     * response is rejected, because the redirect target could be a host that
+     * never passed the SSRF URL validation. Callers needing redirects must
+     * resolve them manually and re-call with a validated URL.
+     *
+     * Bytes are streamed to a temporary file in the destination directory and
+     * atomically renamed to the final path, so a partial file never appears
+     * at C<$savePath>; failures clean up the temp file.
+     */
     public function downloadMedia(string $attachmentId, string $savePath): string
     {
         $this->requireValue($attachmentId, 'attachmentId');
         $this->requireValue($savePath, 'savePath');
+
+        $destDir = dirname($savePath);
+        if (!is_dir($destDir)) {
+            throw new ValidationException("Destination directory does not exist: {$destDir}", 'savePath');
+        }
+        if (is_dir($savePath)) {
+            throw new ValidationException("savePath is a directory, not a file: {$savePath}", 'savePath');
+        }
+
         $url = $this->getMediaUrl($attachmentId, true);
         if ($url === null) {
             throw new ValidationException("No download URL for attachment {$attachmentId}", 'attachmentId');
         }
         $this->validateDownloadUrl($url);
 
+        $tmpPath = $destDir . '/' . bin2hex(random_bytes(8)) . '.tmp';
+
         try {
             $response = $this->client->download($url);
-            if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            $status = $response->getStatusCode();
+
+            if ($status < 200 || $status >= 300) {
+                $note = $status >= 300 && $status < 400 ? ' — redirects are not followed' : '';
                 throw new ValidationException(
-                    "Download failed with HTTP status {$response->getStatusCode()}",
+                    "Download failed with HTTP status {$status}{$note}",
                     'url',
                 );
             }
-            $stream = $response->getBody();
-            $target = @fopen($savePath, 'wb');
-            if ($target === false) {
-                throw new ValidationException("Cannot write to {$savePath}", 'savePath');
-            }
-            while (!$stream->eof()) {
-                fwrite($target, $stream->read(8192));
-            }
-            fclose($target);
-        } catch (ValidationException $e) {
-            if (is_file($savePath)) {
-                @unlink($savePath);
-            }
-            throw $e;
-        } catch (\Throwable $e) {
-            if (is_file($savePath)) {
-                @unlink($savePath);
-            }
-            throw $e;
-        }
 
-        return $savePath;
+            $target = @fopen($tmpPath, 'wb');
+            if ($target === false) {
+                throw new ValidationException("Cannot write to temporary file {$tmpPath}", 'savePath');
+            }
+
+            try {
+                $stream = $response->getBody();
+                while (!$stream->eof()) {
+                    $chunk = $stream->read(8192);
+                    if ($chunk === '') {
+                        break;
+                    }
+                    if (fwrite($target, $chunk) === false) {
+                        throw new ValidationException("Failed writing download data to {$tmpPath}", 'savePath');
+                    }
+                }
+            } finally {
+                @fclose($target);
+            }
+
+            if (!@rename($tmpPath, $savePath)) {
+                throw new ValidationException("Cannot move downloaded file to {$savePath}", 'savePath');
+            }
+
+            return $savePath;
+        } finally {
+            if (is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
+        }
     }
 
     private function upload(string $filePath, string $type, array $options = []): array

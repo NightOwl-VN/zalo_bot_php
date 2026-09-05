@@ -15,6 +15,7 @@ use ZaloBot\Sdk\Modules\UserModule;
 use ZaloBot\Sdk\Modules\WebhookModule;
 use ZaloBot\Sdk\Modules\MediaModule;
 use ZaloBot\Sdk\Exceptions\ValidationException;
+use Psr\Http\Client\ClientInterface;
 
 /**
  * Main Zalo Bot class — entry point for all SDK features.
@@ -28,7 +29,7 @@ class ZaloBot
     public readonly WebhookModule $webhook;
     public readonly MediaModule $media;
 
-    public function __construct(array|Config $config)
+    public function __construct(array|Config $config, ?ClientInterface $httpClient = null)
     {
         $this->config = $config instanceof Config ? $config : new Config(
             botToken: $config['botToken'] ?? throw new ValidationException('botToken is required', 'botToken'),
@@ -43,6 +44,7 @@ class ZaloBot
             timeout: $this->config->timeout,
             maxRetries: $this->config->maxRetries,
             baseURL: $this->config->baseURL,
+            httpClient: $httpClient,
         );
 
         $this->message = new MessageModule($this->client);

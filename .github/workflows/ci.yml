@@ -35,10 +35,9 @@ jobs:
 
       - name: Cache Composer dependencies
         uses: actions/cache@v6
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
@@ -48,9 +47,9 @@ jobs:
           find src/ tests/ examples/ -name '*.php' -print0 | xargs -0 -n1 -I{} php -l {}
 
       - name: Run tests
-        run: vendor/bin/phpunit
+        run: composer test
 
-  lint:
+  quality:
     runs-on: ubuntu-latest
 
     steps:
@@ -67,13 +66,17 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
-      - name: Verify PSR-12 coding standard
-        run: |
-          if command -v vendor/bin/phpcs > /dev/null 2>&1; then
-            vendor/bin/phpcs src/ tests/ examples/ || true
-          else
-            echo "phpcs not installed; skipping PSR-12 verification (php -l still runs in test job)."
-          fi
+      - name: Validate composer.json strictly
+        run: composer validate --strict
+
+      - name: Run test suite
+        run: composer test
+
+      - name: Run PHPStan static analysis
+        run: composer phpstan
+
+      - name: Check coding standard (no fallback allowed)
+        run: composer cs-check
 
       - name: Verify no hardcoded secrets
         run: |
@@ -87,6 +90,26 @@ jobs:
             exit 1
           }
           echo "No hardcoded secrets found."
+
+  consumer-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: curl, mbstring, json
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Consumer smoke test (fresh consumer project, --no-dev, no network)
+        run: bash scripts/consumer-smoke.sh
 
   package:
     runs-on: ubuntu-latest

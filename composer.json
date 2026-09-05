@@ -32,9 +32,9 @@
     },
     "require": {
         "php": ">=8.1",
-        "guzzlehttp/guzzle": "^7.0 || ^8.0",
         "psr/http-client": "^1.0",
-        "psr/http-message": "^2.0"
+        "psr/http-message": "^2.0",
+        "guzzlehttp/guzzle": "^7.0 || ^8.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.0",
@@ -56,17 +56,15 @@
         "phpstan": "phpstan analyse",
         "cs-check": "php-cs-fixer check --diff",
         "cs-fix": "php-cs-fixer fix",
-        "check": [
-            "@test",
-            "@phpstan",
-            "@cs-check"
-        ]
+        "validate": "composer validate --strict",
+        "check": "vendor/bin/phpunit && vendor/bin/phpstan analyse && vendor/bin/php-cs-fixer check --diff"
     },
     "scripts-descriptions": {
         "test": "Run the PHPUnit test suite",
         "phpstan": "Run PHPStan static analysis (level 6) on src/",
         "cs-check": "Check coding standard compliance without modifying files",
         "cs-fix": "Automatically fix coding standard violations",
+        "validate": "Validate composer.json with strict checks",
         "check": "Run all release quality checks (test, phpstan, cs-check)"
     },
     "config": {

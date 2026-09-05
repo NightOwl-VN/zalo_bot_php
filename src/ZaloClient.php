@@ -11,9 +11,7 @@ declare(strict_types=1);
 namespace ZaloBot\Sdk;
 
 use GuzzleHttp\Client;
-use GuzzleHttp\Psr7\MultipartStream;
 use GuzzleHttp\Psr7\Request;
-use GuzzleHttp\Psr7\Utils;
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -40,8 +38,10 @@ class ZaloClient
         private int $maxRetries = 3,
         private string $baseURL = self::API_BASE_URL,
         ?ClientInterface $httpClient = null,
-        /** Test seam: set to 0 to disable sleep entirely, null for normal backoff. */
+        /** Test seam: set to 0 to disable sleeping; null uses normal backoff. */
         private ?int $retryDelayMs = null,
+        /** Mutating POST/upload retries are opt-in for idempotency safety. */
+        private bool $retryMutations = true,
     ) {
         $this->httpClient = $httpClient ?? new Client([
             'timeout' => $this->timeout / 1000,
@@ -74,8 +74,9 @@ class ZaloClient
     {
         $baseUri = $this->getRequestBaseUrl() . '/' . ltrim($apiMethod, '/');
         $payload = array_merge($data, $options);
+        $canRetry = strtoupper($method) === 'GET' || $this->retryMutations;
 
-        for ($attempt = 0; $attempt <= $this->maxRetries; $attempt++) {
+        for ($attempt = 0; $attempt <= ($canRetry ? $this->maxRetries : 0); $attempt++) {
             try {
                 $headers = [
                     'Content-Type' => 'application/json',
@@ -89,8 +90,9 @@ class ZaloClient
                     }
                     $request = new Request('GET', $uri, $headers);
                 } else {
+                    $uri = $baseUri;
                     $body = json_encode($payload, JSON_THROW_ON_ERROR);
-                    $request = new Request('POST', $baseUri, $headers, $body);
+                    $request = new Request('POST', $uri, $headers, $body);
                 }
 
                 $response = $this->httpClient->sendRequest($request);
@@ -110,14 +112,12 @@ class ZaloClient
                     $this->sleepBeforeRetry($attempt);
                     continue;
                 }
-                if ($this->isConnectException($e) && str_contains(strtolower($e->getMessage()), 'timed out')) {
+                if ($this->isTimeoutException($e)) {
                     throw new TimeoutException('Request timed out: ' . $e->getMessage(), null, $e);
                 }
                 throw new NetworkException('Network request failed: ' . $e->getMessage(), null, $e);
             } catch (\JsonException $e) {
                 throw new ApiException('Unable to encode request payload', -1, null, null, $e);
-            } catch (\Throwable $e) {
-                throw new NetworkException('Request failed: ' . $e->getMessage(), null, $e);
             }
         }
 
@@ -133,6 +133,11 @@ class ZaloClient
     {
         $status = $response->getStatusCode();
         $raw = (string) $response->getBody();
+        // Decode non-throwing on purpose: a 2xx response with a non-JSON body is
+        // returned as the raw string (documented public behaviour). $body stays
+        // an empty array for error mapping when decoding fails; JsonException is
+        // only thrown by json_encode() during request building, where it is
+        // translated semantically into an ApiException.
         $body = json_decode($raw, true);
         $body = is_array($body) ? $body : [];
 
@@ -182,7 +187,7 @@ class ZaloClient
     private function shouldRetryException(ClientExceptionInterface $e): bool
     {
         if ($this->isConnectException($e)) {
-            return !str_contains(strtolower($e->getMessage()), 'timed out');
+            return !$this->isTimeoutException($e);
         }
         if (method_exists($e, 'getResponse')) {
             $response = $e->getResponse();
@@ -196,6 +201,20 @@ class ZaloClient
     private function isConnectException(ClientExceptionInterface $e): bool
     {
         return $e instanceof \GuzzleHttp\Exception\ConnectException;
+    }
+
+    private function isTimeoutException(ClientExceptionInterface $e): bool
+    {
+        if (!$e instanceof \GuzzleHttp\Exception\ConnectException
+            && !$e instanceof \GuzzleHttp\Exception\RequestException) {
+            return false;
+        }
+        $context = method_exists($e, 'getHandlerContext') ? $e->getHandlerContext() : [];
+        if (($context['errno'] ?? null) === 28 || ($context['timed_out'] ?? false) === true) {
+            return true;
+        }
+        // Narrow compatibility fallback for handlers that omit cURL context.
+        return preg_match('/\b(timeout|timed out)\b/i', $e->getMessage()) === 1;
     }
 
     private function parseRetryAfterHeader(string $value): ?int
@@ -213,21 +232,13 @@ class ZaloClient
 
     private function sleepBeforeRetry(int $attempt, string $retryAfter = ''): void
     {
-        // Test seam: retryDelayMs === 0 disables sleeps entirely so retry
-        // behaviour can be verified without wall-clock delays.
         if ($this->retryDelayMs === 0) {
             return;
         }
-
         $serverDelay = $this->parseRetryAfterHeader($retryAfter);
         $delayMs = $serverDelay !== null
             ? $serverDelay * 1000
             : min(1000 * (2 ** $attempt) + random_int(0, 250), 30000);
-
-        if ($this->retryDelayMs !== null) {
-            $delayMs = min($delayMs, $this->retryDelayMs);
-        }
-
         if ($delayMs > 0) {
             usleep($delayMs * 1000);
         }
@@ -252,58 +263,72 @@ class ZaloClient
     /**
      * Upload a file via multipart/form-data.
      *
-     * Uses Guzzle's MultipartStream to stream file contents without loading
-     * entire files into memory.
-     *
      * @param array<string, \CURLFile|mixed> $formData
      * @throws ApiException|RateLimitException|AuthException|TimeoutException|NetworkException
      */
     public function upload(string $method, array $formData): mixed
     {
         $uri = $this->getRequestBaseUrl() . '/' . ltrim($method, '/');
-
         $elements = [];
-        foreach ($formData as $name => $contents) {
-            $elements[] = $this->buildMultipartElement($name, $contents);
-        }
-
-        $multipart = new MultipartStream($elements);
-
-        $request = (new Request('POST', $uri))
-            ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $multipart->getBoundary())
-            ->withBody($multipart);
+        $handles = [];
 
         try {
-            $response = $this->httpClient->sendRequest($request);
-        } catch (ClientExceptionInterface $e) {
-            throw new NetworkException('Upload failed: ' . $e->getMessage(), null, $e);
-        }
+            foreach ($formData as $name => $contents) {
+                $elements[] = $this->buildMultipartElement($name, $contents, $handles);
+            }
 
-        return $this->decodeResponse($response);
+            $multipart = new \GuzzleHttp\Psr7\MultipartStream($elements);
+            $request = (new Request('POST', $uri))
+                ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $multipart->getBoundary())
+                ->withBody($multipart);
+
+            $response = $this->httpClient->sendRequest($request);
+            return $this->decodeResponse($response);
+        } catch (ClientExceptionInterface $e) {
+            if ($this->isTimeoutException($e)) {
+                throw new TimeoutException('Upload timed out: ' . $e->getMessage(), null, $e);
+            }
+            throw new NetworkException('Upload failed: ' . $e->getMessage(), null, $e);
+        } finally {
+            foreach ($handles as $handle) {
+                if (is_resource($handle)) {
+                    fclose($handle);
+                }
+            }
+        }
     }
 
     /**
      * Build a MultipartStream element from a form field name and CURLFile/string.
      *
      * CURLFile values are opened as streams so the file is read lazily, never
-     * buffered in its entirety in PHP userland memory.
+     * buffered in its entirety in PHP userland memory. The caller must track
+     * returned handles and fclose() them after the request completes.
      *
-     * @return array{name: string, contents: mixed, filename?: string, headers?: array<string,string>}
+     * @param array<int, resource> $handles
+     * @return array{name: string, contents: mixed, filename?: string, headers?: array<string, string>}
      * @throws ValidationException
      */
-    private function buildMultipartElement(string $name, mixed $contents): array
+    private function buildMultipartElement(string $name, mixed $contents, array &$handles): array
     {
         if ($contents instanceof \CURLFile) {
             $filePath = $contents->getFilename();
+            if (!is_file($filePath) || !is_readable($filePath) || filesize($filePath) === 0) {
+                throw new ValidationException("Upload file must be a readable, non-empty regular file: {$filePath}", 'file');
+            }
             $fileHandle = fopen($filePath, 'rb');
             if ($fileHandle === false) {
                 throw new ValidationException("Cannot open file for upload: {$filePath}", 'file');
             }
+            $handles[] = $fileHandle;
+
+            $filename = str_replace(["\r", "\n", '"', '\\'], '', $contents->getPostFilename() ?: basename($filePath));
+            $filename = trim($filename) ?: 'upload';
 
             return [
                 'name' => $name,
                 'contents' => $fileHandle,
-                'filename' => $contents->getPostFilename(),
+                'filename' => $filename,
                 'headers' => [
                     'Content-Type' => mime_content_type($filePath) ?: 'application/octet-stream',
                 ],
@@ -327,7 +352,7 @@ class ZaloClient
         try {
             return $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            if ($this->isConnectException($e) && str_contains(strtolower($e->getMessage()), 'timed out')) {
+            if ($this->isTimeoutException($e)) {
                 throw new TimeoutException('Download timed out: ' . $e->getMessage(), null, $e);
             }
             throw new NetworkException('Download failed: ' . $e->getMessage(), null, $e);
