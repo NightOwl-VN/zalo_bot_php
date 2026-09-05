@@ -15,7 +15,7 @@ We are committed to providing a welcoming, inclusive, and harassment-free experi
 ## 🛠️ How to Contribute
 
 ### 1. Reporting Bugs
-- Search existing [GitHub Issues](https://github.com/NightOwl-VN/zalo_bot_php/issues) first to ensure the bug hasn't already been reported.
+- Search existing [GitHub Issues](https://github.com/NightOwl-VN/zalobot-sdk-php/issues) first to ensure the bug hasn't already been reported.
 - If not, create a new issue using the **Bug Report** template.
 - Provide a clear title, reproduction steps, expected vs. actual behavior, and environment details (PHP version, OS, SDK version).
 - Include relevant error logs or minimal code snippets without exposing sensitive access tokens or secret keys.
@@ -37,7 +37,7 @@ Follow these steps to set up the development environment locally:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/NightOwl-VN/zalo_bot_php.git
+git clone https://github.com/NightOwl-VN/zalobot-sdk-php.git
 cd zalobot-php-sdk
 
 # 2. Install dependencies
@@ -152,7 +152,7 @@ We enforce the [Conventional Commits](https://www.conventionalcommits.org/) spec
    ```
 
 4. **Open a Pull Request**:
-   - Open a PR against the `main` branch of `NightOwl-VN/zalo_bot_php`.
+   - Open a PR against the `main` branch of `NightOwl-VN/zalobot-sdk-php`.
    - Provide a clear summary of changes and reference related issue numbers (e.g., `Closes #12`).
    - A maintainer will review your PR and provide feedback.
 
