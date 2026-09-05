@@ -35,9 +35,10 @@ jobs:
 
       - name: Cache Composer dependencies
         uses: actions/cache@v6
-        path: ${{ steps.composer-cache.outputs.dir }}
-        key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
-        restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
@@ -49,7 +50,7 @@ jobs:
       - name: Run tests
         run: composer test
 
-  quality:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
