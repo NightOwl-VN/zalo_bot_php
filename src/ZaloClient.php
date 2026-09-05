@@ -275,4 +275,22 @@ class ZaloClient
             . "Content-Disposition: form-data; name=\"{$name}\"\r\n\r\n"
             . (string) $contents . "\r\n";
     }
+
+    /**
+     * Download a file via PSR-18 (used by MediaModule).
+     *
+     * @throws NetworkException|TimeoutException
+     */
+    public function download(string $url): ResponseInterface
+    {
+        $request = new Request('GET', $url, ['Accept' => '*/*']);
+        try {
+            return $this->httpClient->sendRequest($request);
+        } catch (ClientExceptionInterface $e) {
+            if ($this->isConnectException($e) && str_contains(strtolower($e->getMessage()), 'timed out')) {
+                throw new TimeoutException('Download timed out: ' . $e->getMessage(), null, $e);
+            }
+            throw new NetworkException('Download failed: ' . $e->getMessage(), null, $e);
+        }
+    }
 }
